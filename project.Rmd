@@ -1,0 +1,84 @@
+---
+title: "Human activity recognition: Advantage of common sense over thoughtless use of machine learning"
+author: "Anna E. Frid"
+date: "20.06.2015"
+output: html_document
+---
+
+This is a course project for the Coursera class "Practical Machine Learning", but I find it very funny, since after all, in this framework, simple general considerations work much better than any of the involved algorithms. The goal is to predict to which type of movement correspond an observation of some human activity measurement. We are given a huge training set and a testing set of just 20 observations:
+
+```{r cache=TRUE}
+testing<-read.csv("pml-testing.csv")
+training<-read.csv("pml-training.csv")
+dim(training); dim(testing)
+```
+
+So, there are 159 predictors and one variable *classe* to be predicted; the variable no. 160 of the testing set is the problem ID. If we look to the columns of the testing set, we see that most of them are either equal to **NA** or empty; anyway, they take only one value each. We suppose that their values for the training set will be not too important and erase these variables from the training set to get a better model, and to get it faster. We also erase the first variable *X* since it is just a string number.
+
+```{r}
+num_values<-apply(testing,2,function(x) length(unique(x)))
+training2<-training[,num_values>1]
+training2$X<-NULL
+dim(training2)
+```
+The remaining set of 57 predictors is still too long for my computer to train a random forest, so, we try to train a tree model.
+
+```{r MyTreePlot, cache=TRUE, message=FALSE}
+library(caret)
+library(rattle)
+Sys.setlocale("LC_TIME", "C") 
+model<-train(classe ~ .,data=training2,method="rpart")
+fancyRpartPlot(model$finalModel)
+```
+
+Now let us estimate the predictive power of this model which takes several minutes of a computer time to build.
+
+```{r}
+pred<-predict(model,newdata=training2)
+table(pred,training2$classe)
+```
+We see that despite the bootstrap cross-validation which is used in the *train* function, the percentage of correct predictions is not more than
+
+```{r}
+sum(diag(table(pred,training2$classe)))/nrow(training2)
+```
+This is better than the base hypothesis of the most frequent outcome which gives us
+```{r}
+max(table(training$classe))/nrow(training2)
+```
+
+However, it is still a very poor prediction, and we can expect that it is even less effective on the testing set.
+
+On the other hand, let us consider in detail the variable *raw_timestamp_part_1* of the training set and its relations with the *classe* variable which we predict.
+
+```{r}
+ttt<-as.data.frame(table(training$classe,training$raw_timestamp_part_1))
+head(ttt)
+```
+We see that most values of *raw_timestamp_part_1* correspond to only one value of *classe*! Let us verify it.
+
+```{r}
+ttt2<-ttt[ttt$Freq>0,]
+length(unique(ttt2$Var2))
+nrow(ttt2)
+```
+So, at most 858-837=21 values of *raw_timestamp_part_1* can correspond to at least two different types of movements! Let us check if there is any ambiguity with the observations of the testing set. We just suppose that the value of *classe* for each value of *raw_timestamp_part_1* is unique. If it were not the case, the following commands would cause an error.
+
+```{r}
+ttt2$Var2<-as.character(ttt2$Var2)
+answer1 <- vector(mode="character", length=20)
+for(i in 1:20){answer1[i]<-as.character(ttt2[which(ttt2$Var2==testing$raw_timestamp_part_1[i]),]$Var1)}
+answer1
+```
+
+Apparently, everything works well, and moreover, **answer1** is indeed the correct vector of answers as I checked when submitting it. So, in this problem, very basic observations work much better than thoughtless use of decision trees, even with cross-validation!
+
+Just to finish the report, let us make a decision tree prediction and compare it to the real answer which we know now:
+
+```{r}
+pred2<-predict(model,newdata=testing)
+pred2
+table(pred2,answer1)
+sum(diag(table(pred2,answer1)))/nrow(testing)
+```
+This modest value shows very well that sometimes staring at the data set and some simple experiments work better than any complicated cross-validation techniques. I suppose that the goal of this course project was to show exactly this.
